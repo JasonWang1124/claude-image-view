@@ -1,11 +1,16 @@
-# Claude Image View (iTerm2 fork)
-
-Fork of [jarrodwatts/claude-image-view](https://github.com/jarrodwatts/claude-image-view) that adds real pictures in iTerm2 3.6+ (see [iTerm2](#iterm2)). Everything else is upstream.
+# Claude Image View — iTerm2 fork
 
 A Claude Code mod that shows the images you paste, so you see thumbnails above your prompt instead of bare `[Image #1]` tags.
 
-[![License](https://img.shields.io/github/license/jarrodwatts/claude-image-view?v=2)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/jarrodwatts/claude-image-view)](https://github.com/jarrodwatts/claude-image-view/stargazers)
+This is a fork of [jarrodwatts/claude-image-view](https://github.com/jarrodwatts/claude-image-view) (0.2.0). Everything upstream does, it does; what it adds is **real pictures in iTerm2 3.6+** instead of half-block thumbnails:
+
+- iTerm2 3.6+ already draws the kitty graphics protocol that Claude Code uses, Unicode placeholders included; Claude Code just doesn't send pictures to it, because it trusts terminals by name ([anthropics/claude-code#99566](https://github.com/anthropics/claude-code/issues/99566)).
+- So in iTerm2 the mod doesn't draw blocks. The first time you paste, it offers one key press that writes `CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1` into the `env` block of `~/.claude/settings.json` (with a backup). From the next start, pasted images show as real pictures, the same as in Ghostty.
+- Other terminals behave exactly as upstream: Ghostty and kitty get pictures, the rest get half blocks.
+
+Details in [iTerm2](#iterm2); 繁體中文說明在 [iTerm2 使用者](#iterm2-使用者繁體中文).
+
+[![License](https://img.shields.io/github/license/JasonWang1124/claude-image-view?v=2)](LICENSE)
 
 ![Claude Image View in action](claude-image-view.png)
 
@@ -60,6 +65,7 @@ Claude Code saves every pasted image to a cache folder for the session, as `<tmp
 2. For each tag it finds the cached file. Kitty graphics only draws PNG from a file, so on macOS anything else (WebP, JPEG, HEIC, GIF, TIFF) is converted once with `sips` to `<session>/image-view-<n>.png`. It reads the size from the PNG header.
 3. It draws the thumbnails in the band above the prompt. Where Claude Code draws pictures (see [Terminal Support](#terminal-support)) it uses Claude Code's `Image` element, and the terminal reads the file itself, so the image data never passes through the mod.
 4. Anywhere else it decodes the PNG itself, averages it down to a small thumbnail, and draws it in colored half blocks (`▀`) with Claude Code's `Raster` element. It's lower resolution than a real picture, but it's the picture.
+5. In iTerm2 3.6+ (read from `TERM_PROGRAM` and `TERM_PROGRAM_VERSION`) without `CLAUDE_CODE_FORCE_TERMINAL_IMAGES`, step 4 is replaced by the **Enable** offer described under [iTerm2](#iterm2): pressing it rewrites `~/.claude/settings.json` so that Claude Code sends pictures from the next start.
 
 ## Terminal Support
 
@@ -100,6 +106,8 @@ iTerm2 3.6 以上已支援 kitty 圖形協定（含 Unicode placeholder），只
 ## Security
 
 Claude Image View is local-only. It makes no network requests. It reads the prompt box, lists Claude Code's temp folder to find the current session's image cache, and reads each pasted image (up to Claude Code's 4 MiB read limit). For a non-PNG paste it runs `sips` and writes one PNG thumbnail into that session's temp folder. On macOS and Linux it runs `id -u` once to find that temp folder. It also reads a few terminal variables (`TERM`, `TERM_PROGRAM`, `TMUX` and similar) to tell which kind of thumbnail Claude Code can draw.
+
+The one file it writes outside the temp folder is `~/.claude/settings.json`, and only when you press **Enable** in iTerm2: it parses the file as JSON, adds `env.CLAUDE_CODE_FORCE_TERMINAL_IMAGES = "1"`, keeps every other key, and writes it back pretty-printed with two-space indentation (so a differently formatted file is reformatted, and `env` moves to the end). The previous content is saved first as `settings.json.image-view.bak`. A file that isn't a JSON object (comments, trailing commas) is left alone and the offer tells you to add the line by hand. The write is not atomic; if Claude Code died in the middle of it, the `.bak` file is the copy to restore.
 
 Run `claude plugin validate` on the repo to see every event it hooks and every call it makes.
 
@@ -149,6 +157,8 @@ Claude Code writes the API types into `.claude-plugin/types/` the first time it 
 
 MIT. See [LICENSE](LICENSE).
 
-## Star History
+## Credits
 
-[![Star History Chart](https://api.star-history.com/svg?repos=jarrodwatts/claude-image-view&type=Date)](https://star-history.com/#jarrodwatts/claude-image-view&Date)
+- [Jarrod Watts](https://github.com/jarrodwatts) and the contributors of [claude-image-view](https://github.com/jarrodwatts/claude-image-view), which this fork builds on; the half-block renderer, PNG decoder, paste-cache lookup and tests are theirs.
+- [youngOman/pill-mods](https://github.com/youngOman/pill-mods) for pointing the way to the original mod.
+- The iTerm2 finding (that 3.6+ answers the kitty graphics query with `OK` for file, direct and placeholder transmission, and draws Claude Code's pictures once forced) was verified by probing iTerm2 3.7.6 directly and reading Claude Code 2.1.292's own `Terminal capabilities` debug line.
