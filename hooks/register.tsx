@@ -211,7 +211,11 @@ export const register: Register = on => {
               </Box>
             )}
             {forceState.status === 'written' && (
-              <Text color="green">Written to {forceState.path}. Restart Claude Code and pasted images show as real pictures.</Text>
+              <Box flexDirection="column">
+                <Text color="green">Real pictures enabled: CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1 written to {forceState.path}.</Text>
+                <Text dimColor>Claude Code reads it at startup, so in this session {count} still shows as a tag only. Quit and start Claude Code again, then paste: the picture appears here.</Text>
+                <Button key="image-view-dismiss" plain dimColor hotkey="0" role="dismiss" label="Got it" onPress={() => void update($, force, (): ForceState => ({ status: 'dismissed' }))} />
+              </Box>
             )}
             {forceState.status === 'failed' && (
               <Text color="yellow">Couldn't update settings.json ({forceState.reason}). Add {'"env": { "CLAUDE_CODE_FORCE_TERMINAL_IMAGES": "1" }'} to ~/.claude/settings.json by hand.</Text>
