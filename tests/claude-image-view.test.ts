@@ -437,6 +437,6 @@ test('in iTerm2 a paste shows the Enable offer instead of blocks, and Enable wri
   await band.press({ key: 'image-view-enable' })
   expect(JSON.parse(written['/Users/me/.claude/settings.json']!)).toEqual({ model: 'opus', env: { CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' } })
   expect(written['/Users/me/.claude/settings.json.image-view.bak']).toBe('{ "model": "opus" }\n')
-  expect(await band.find({ text: /Restart Claude Code/ })).toBeDefined()
+  expect(await band.find({ text: /Real pictures enabled/ })).toBeDefined()
   expect(await band.find({ key: 'image-view-enable' })).toBeUndefined()
 })
