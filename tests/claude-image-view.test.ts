@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 
-import { blockCells, drawsPictures, fitCells, fitRow, imageNumbers, pngSize } from '../hooks/layout'
+import { atLeast, blockCells, drawsPictures, fitCells, fitRow, imageNumbers, iterm2NeedsForce, iterm2Version, pngSize, withForcedImages } from '../hooks/layout'
 import { decodeThumb } from '../hooks/png'
 
 function pngHead(width: number, height: number): string {
@@ -368,3 +368,75 @@ for (const [platform, env, root] of [
     expect(listed[0]).toBe(root)
   })
 }
+
+test('iTerm2 3.6+ is offered real pictures unless Claude Code is already forced, pinned, or in a multiplexer', () => {
+  expect(iterm2Version({ TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.7.6' })).toBe('3.7.6')
+  expect(iterm2Version({ TERM_PROGRAM: 'ghostty' })).toBeNull()
+  expect(atLeast('3.7.6', 3, 6)).toBe(true)
+  expect(atLeast('3.6.0beta1', 3, 6)).toBe(true)
+  expect(atLeast('3.5.14', 3, 6)).toBe(false)
+  expect(atLeast('', 3, 6)).toBe(false)
+  const iterm = { TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.7.6', TERM: 'xterm-256color' }
+  expect(iterm2NeedsForce(iterm)).toBe(true)
+  expect(iterm2NeedsForce({ ...iterm, TERM_PROGRAM_VERSION: '3.5.14' })).toBe(false)
+  expect(iterm2NeedsForce({ ...iterm, CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' })).toBe(false)
+  expect(iterm2NeedsForce({ ...iterm, CLAUDE_IMAGE_VIEW_RENDERER: 'blocks' })).toBe(false)
+  expect(iterm2NeedsForce({ ...iterm, TMUX: '/tmp/tmux-501/default,1,0' })).toBe(false)
+  expect(iterm2NeedsForce({ ...iterm, CLAUDE_CODE_SESSION_KIND: 'bg' })).toBe(false)
+  expect(iterm2NeedsForce(GHOSTTY)).toBe(false)
+  // once forced, Claude Code draws pictures in iTerm2 and so does the mod
+  expect(drawsPictures({ ...iterm, CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' })).toBe(true)
+})
+
+test('settings.json gains the env line and keeps everything else; non-JSON is refused', () => {
+  const before = '{\n  "model": "opus",\n  "env": { "FOO": "bar" },\n  "permissions": { "allow": ["Bash(ls)"] }\n}\n'
+  const after = JSON.parse(withForcedImages(before)!)
+  expect(after).toEqual({ model: 'opus', env: { FOO: 'bar', CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' }, permissions: { allow: ['Bash(ls)'] } })
+  expect(JSON.parse(withForcedImages('')!)).toEqual({ env: { CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' } })
+  expect(JSON.parse(withForcedImages('{"env": "oops"}')!)).toEqual({ env: { CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' } })
+  expect(withForcedImages('{ not json')).toBeNull()
+  expect(withForcedImages('[1,2]')).toBeNull()
+})
+
+test('in iTerm2 a paste shows the Enable offer instead of blocks, and Enable writes settings.json with a backup', async ($, on) => {
+  const clock = mock.clock(on)
+  const ITERM: Record<string, string> = { TERM_PROGRAM: 'iTerm.app', TERM_PROGRAM_VERSION: '3.7.6', TERM: 'xterm-256color', HOME: '/Users/me' }
+  const dir = '/tmp/claude-501/-work/sess-3/images'
+  const draft = 'see [Image #1]'
+  const written: Record<string, string> = {}
+  on('session.start', () => ({ cwd: '/work' }))
+  on('prompt.read', () => ({ value: { text: draft, cursor: draft.length } }))
+  on('env.get', ($, e) => ({ value: ITERM[e.name] }))
+  on('process.run', () => ran('501\n'))
+  on('session.id', () => ({ value: 'sess-3' }))
+  on('fs.list', () => ({ value: [{ name: '-work', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }))
+  on('fs.exists', ($, e) => ({ value: e.path === dir || e.path === `${dir}/1.png` }))
+  on('fs.read', ($, e) => (e.path === '/Users/me/.claude/settings.json' ? { value: '{ "model": "opus" }\n' } : { value: { base64: pngHead(800, 600) } }))
+  on('fs.write', ($, e) => {
+    written[e.path] = e.text
+    return { value: undefined }
+  })
+  on('ui.render', ($e, e) => {
+    const { Box } = $e.ui.resolve(e)
+    return Box({ key: 'engine-band' })
+  })
+
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  await clock.advance(200)
+
+  const band = await $.ui.mount({
+    plugin: 'image-view',
+    surface: 'terminal',
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking: false, maxRows: 20, bodyColumns: 100 } as never,
+  })
+  expect(await band.find({ key: 'image-view-enable' })).toBeDefined()
+  expect(await band.find({ type: 'Raster' })).toBeUndefined()
+  expect(await band.find({ type: 'Image' })).toBeUndefined()
+
+  await band.press({ key: 'image-view-enable' })
+  expect(JSON.parse(written['/Users/me/.claude/settings.json']!)).toEqual({ model: 'opus', env: { CLAUDE_CODE_FORCE_TERMINAL_IMAGES: '1' } })
+  expect(written['/Users/me/.claude/settings.json.image-view.bak']).toBe('{ "model": "opus" }\n')
+  expect(await band.find({ text: /Restart Claude Code/ })).toBeDefined()
+  expect(await band.find({ key: 'image-view-enable' })).toBeUndefined()
+})

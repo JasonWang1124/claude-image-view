@@ -1,8 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { PastedImage } from '../types'
-import { blockCells, drawsPictures, fitRow, imageNumbers, pngSize } from './layout'
+import type { ForceState, PastedImage } from '../types'
+import { blockCells, drawsPictures, fitRow, imageNumbers, iterm2NeedsForce, iterm2Version, pngSize, withForcedImages } from './layout'
 import type { Size } from './layout'
 import { decodeThumb } from './png'
 import type { Thumb } from './png'
@@ -12,6 +12,9 @@ import type { Thumb } from './png'
 const POLL_MS = 200
 
 const images = atom({ plugin: 'image-view', key: 'images' } as const, [] as PastedImage[])
+// iTerm2 3.6+ draws real pictures once Claude Code is told to send them; until then the band offers
+// to write that into ~/.claude/settings.json instead of drawing half blocks.
+const force = atom({ plugin: 'image-view', key: 'force' } as const, { status: 'none' } as ForceState)
 
 let tmpRoot: string | undefined
 let found: { sessionId: string; dir: string } | undefined
@@ -29,22 +32,48 @@ const unconvertible = new Set<string>()
 // Small decoded copies for terminals that can't draw pictures, which get colored blocks instead.
 const thumbs = new Map<string, Thumb | null>()
 let pictures: boolean | undefined
+let termEnv: Record<string, string | undefined> = {}
 
 // Claude Code doesn't tell mods whether its Image draws a picture, so go by the environment
 // it decides from.
+async function readTermEnv($: EngineInterface): Promise<Record<string, string | undefined>> {
+  return {
+    TERM: await $.env.get('TERM'),
+    TERM_PROGRAM: await $.env.get('TERM_PROGRAM'),
+    TERM_PROGRAM_VERSION: await $.env.get('TERM_PROGRAM_VERSION'),
+    TMUX: await $.env.get('TMUX'),
+    STY: await $.env.get('STY'),
+    KITTY_WINDOW_ID: await $.env.get('KITTY_WINDOW_ID'),
+    GHOSTTY_RESOURCES_DIR: await $.env.get('GHOSTTY_RESOURCES_DIR'),
+    CLAUDE_CODE_FORCE_TERMINAL_IMAGES: await $.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES'),
+    CLAUDE_CODE_SESSION_KIND: await $.env.get('CLAUDE_CODE_SESSION_KIND'),
+    CLAUDE_IMAGE_VIEW_RENDERER: await $.env.get('CLAUDE_IMAGE_VIEW_RENDERER'),
+  }
+}
+
+// Writes CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1 into the env block of ~/.claude/settings.json, keeping
+// a copy of the old file beside it. Claude Code reads it at startup, so pictures come on next launch.
+async function enableForcedImages($: EngineInterface): Promise<void> {
+  const home = (await $.env.get('HOME'))?.replace(/\/+$/, '')
+  if (!home) return void (await update($, force, (): ForceState => ({ status: 'failed', reason: 'HOME is not set' })))
+  const path = `${home}/.claude/settings.json`
+  const text = await $.fs.read(path).catch(() => '')
+  const next = withForcedImages(text)
+  if (next === null) return void (await update($, force, (): ForceState => ({ status: 'failed', reason: `${path} is not a JSON object` })))
+  try {
+    if (text !== '') await $.fs.write(`${path}.image-view.bak`, text)
+    await $.fs.write(path, next)
+  } catch (error) {
+    return void (await update($, force, (): ForceState => ({ status: 'failed', reason: error instanceof Error ? error.message : String(error) })))
+  }
+  await update($, force, (): ForceState => ({ status: 'written', path }))
+  $.ui.toast('CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1 written to settings.json; restart Claude Code for real pictures')
+}
+
 async function canDrawPictures($: EngineInterface): Promise<boolean> {
   if (pictures === undefined) {
-    pictures = drawsPictures({
-      TERM: await $.env.get('TERM'),
-      TERM_PROGRAM: await $.env.get('TERM_PROGRAM'),
-      TMUX: await $.env.get('TMUX'),
-      STY: await $.env.get('STY'),
-      KITTY_WINDOW_ID: await $.env.get('KITTY_WINDOW_ID'),
-      GHOSTTY_RESOURCES_DIR: await $.env.get('GHOSTTY_RESOURCES_DIR'),
-      CLAUDE_CODE_FORCE_TERMINAL_IMAGES: await $.env.get('CLAUDE_CODE_FORCE_TERMINAL_IMAGES'),
-      CLAUDE_CODE_SESSION_KIND: await $.env.get('CLAUDE_CODE_SESSION_KIND'),
-      CLAUDE_IMAGE_VIEW_RENDERER: await $.env.get('CLAUDE_IMAGE_VIEW_RENDERER'),
-    })
+    if (termEnv.TERM === undefined && termEnv.TERM_PROGRAM === undefined) termEnv = await readTermEnv($)
+    pictures = drawsPictures(termEnv)
   }
   return pictures
 }
@@ -149,6 +178,8 @@ async function check($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     pictures = undefined
+    termEnv = await readTermEnv($)
+    if (iterm2NeedsForce(termEnv) && (await read($, force)).status === 'none') await update($, force, (): ForceState => ({ status: 'needed' }))
     $.clock.every(POLL_MS, () => check($))
     return next(e)
   })
@@ -158,7 +189,38 @@ export const register: Register = on => {
     const list = await read($, images)
     if (list.length === 0) return next(e)
 
-    const { Box, Image, Raster, Text } = $.ui.resolve(e)
+    const { Box, Button, Image, Raster, Text } = $.ui.resolve(e)
+    const forceState = await read($, force)
+    if (forceState.status !== 'none' && forceState.status !== 'dismissed') {
+      const below = await next(e)
+      const version = iterm2Version(termEnv) ?? ''
+      const count = list.length === 1 ? '[Image #' + list[0]!.n + ']' : list.length + ' images'
+      return (
+        <Box flexDirection="column">
+          <Box flexDirection="column" borderStyle="round" borderDimColor paddingX={1}>
+            {forceState.status === 'needed' && (
+              <Box flexDirection="column">
+                <Text>
+                  <Text color="cyan">{count}</Text> pasted. iTerm2 {version} can draw it as a real picture, but Claude Code only sends pictures to terminals it knows by name.
+                </Text>
+                <Text dimColor>Enable writes CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1 into ~/.claude/settings.json (old file kept as settings.json.image-view.bak); pictures show from the next Claude Code start.</Text>
+                <Box flexDirection="row" columnGap={2}>
+                  <Button key="image-view-enable" plain hotkey="1" label="Enable real pictures in iTerm2" onPress={() => void enableForcedImages($)} />
+                  <Button key="image-view-dismiss" plain dimColor hotkey="0" role="dismiss" label="Not now" onPress={() => void update($, force, (): ForceState => ({ status: 'dismissed' }))} />
+                </Box>
+              </Box>
+            )}
+            {forceState.status === 'written' && (
+              <Text color="green">Written to {forceState.path}. Restart Claude Code and pasted images show as real pictures.</Text>
+            )}
+            {forceState.status === 'failed' && (
+              <Text color="yellow">Couldn't update settings.json ({forceState.reason}). Add {'"env": { "CLAUDE_CODE_FORCE_TERMINAL_IMAGES": "1" }'} to ~/.claude/settings.json by hand.</Text>
+            )}
+          </Box>
+          {below}
+        </Box>
+      )
+    }
     const cells = fitRow(list.map(image => image.size), e.props.maxRows, e.props.bodyColumns)
     if (cells.length === 0) return next(e)
     const hidden = list.length - cells.length

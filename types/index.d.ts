@@ -6,8 +6,16 @@ export type PastedImage = {
   size: { width: number; height: number } | null
 }
 
+/** The iTerm2 offer to turn Claude Code's terminal images on: shown, taken, declined, or not applicable. */
+export type ForceState =
+  | { status: 'none' }
+  | { status: 'needed' }
+  | { status: 'dismissed' }
+  | { status: 'written'; path: string }
+  | { status: 'failed'; reason: string }
+
 declare module 'claude-code' {
   interface PluginState {
-    'image-view': { images: PastedImage[] }
+    'image-view': { images: PastedImage[]; force: ForceState }
   }
 }

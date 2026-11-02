@@ -1,4 +1,6 @@
-# Claude Image View
+# Claude Image View (iTerm2 fork)
+
+Fork of [jarrodwatts/claude-image-view](https://github.com/jarrodwatts/claude-image-view) that adds real pictures in iTerm2 3.6+ (see [iTerm2](#iterm2)). Everything else is upstream.
 
 A Claude Code mod that shows the images you paste, so you see thumbnails above your prompt instead of bare `[Image #1]` tags.
 
@@ -12,8 +14,8 @@ A Claude Code mod that shows the images you paste, so you see thumbnails above y
 Inside Claude Code, run:
 
 ```
-/plugin marketplace add jarrodwatts/claude-image-view
-/plugin install image-view
+/plugin marketplace add JasonWang1124/claude-image-view
+/plugin install image-view@claude-image-view
 /reload-plugins
 ```
 
@@ -23,7 +25,7 @@ That's it. Paste an image into the prompt and its thumbnail appears above the in
 <summary><strong>Prefer the terminal?</strong></summary>
 
 ```bash
-claude plugin marketplace add jarrodwatts/claude-image-view
+claude plugin marketplace add JasonWang1124/claude-image-view
 claude plugin install image-view@claude-image-view
 ```
 
@@ -66,11 +68,32 @@ Claude Code, not the mod, decides whether a terminal gets real pictures. It draw
 | Terminal | Thumbnail |
 |---|---|
 | Ghostty, kitty | Real picture |
-| iTerm2, Terminal.app, WezTerm, VS Code, Windows Terminal, Orca, most others | Half blocks |
+| iTerm2 3.6+ | Real picture, after a one-time **Enable** (below) |
+| Terminal.app, WezTerm, VS Code, Windows Terminal, Orca, most others | Half blocks |
 | Inside tmux or screen, even in Ghostty or kitty | Half blocks |
 | Agent view and background sessions | Half blocks, or real pictures with `CLAUDE_CODE_FORCE_TERMINAL_IMAGES` (below) |
 
 Some terminals speak the kitty graphics protocol but still get half blocks, because Claude Code trusts terminals by name ([anthropics/claude-code#99566](https://github.com/anthropics/claude-code/issues/99566)), or because it doesn't wrap images for tmux passthrough yet ([anthropics/claude-code#100146](https://github.com/anthropics/claude-code/issues/100146)). Those are Claude Code limits, so a fix there brings real pictures to the mod with no change here.
+
+### iTerm2
+
+iTerm2 3.6 and later speaks the kitty graphics protocol, Unicode placeholders included: it answers the protocol's query (`a=q`) with `OK` for file and direct PNG transmission and for placeholder placement, and it draws Claude Code's pictures correctly once Claude Code is told to send them (verified on iTerm2 3.7.6 with Claude Code 2.1.292, whose own log says `kittyGraphics=no (probe: graphics reply OK, terminal iTerm2 3.7.6)`: the probe passes, the name check fails).
+
+So in iTerm2 3.6+ this fork doesn't draw half blocks. The first time you paste an image it offers to turn pictures on:
+
+```
+╭──────────────────────────────────────────────────────────────────────────╮
+│ [Image #1] pasted. iTerm2 3.7.6 can draw it as a real picture, but        │
+│ Claude Code only sends pictures to terminals it knows by name.            │
+│ 1: Enable real pictures in iTerm2    0: Not now                           │
+╰──────────────────────────────────────────────────────────────────────────╯
+```
+
+**Enable** writes `"env": { "CLAUDE_CODE_FORCE_TERMINAL_IMAGES": "1" }` into `~/.claude/settings.json` (the previous file is kept as `settings.json.image-view.bak`). Restart Claude Code and pasted images show as real pictures, the same as in Ghostty. Nothing else changes: inside tmux or screen Claude Code still turns images off, and `CLAUDE_IMAGE_VIEW_RENDERER=blocks` still forces half blocks if you prefer them.
+
+#### iTerm2 使用者（繁體中文）
+
+iTerm2 3.6 以上已支援 kitty 圖形協定（含 Unicode placeholder），只是 Claude Code 認終端名稱不認能力，預設不對 iTerm2 送圖。在 iTerm2 貼圖時，這個版本會在輸入框上方顯示「Enable real pictures in iTerm2」按鈕（按 `1`），按下後會把 `CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1` 寫進 `~/.claude/settings.json` 的 `env` 區塊（舊檔備份為 `settings.json.image-view.bak`），**重新啟動 Claude Code** 後貼上的圖就是真實圖片，不是色塊。
 
 `CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1` makes Claude Code draw pictures in any terminal. Only set it if your terminal supports the kitty protocol's Unicode placeholders. VS Code's terminal, for one, doesn't yet, and shows a grid of colored squares instead ([xtermjs/xterm.js#5711](https://github.com/xtermjs/xterm.js/issues/5711)).
 
@@ -84,7 +107,7 @@ Run `claude plugin validate` on the repo to see every event it hooks and every c
 
 - Claude Code v2.1.287 or later (mods support)
 - macOS or Linux. Windows finds pastes too, but it's less tested and only previews PNG pastes.
-- For full-resolution thumbnails, [Ghostty](https://ghostty.org) or [kitty](https://sw.kovidgoyal.net/kitty/). Any other terminal gets half-block thumbnails (best with truecolor).
+- For full-resolution thumbnails, [Ghostty](https://ghostty.org), [kitty](https://sw.kovidgoyal.net/kitty/), or [iTerm2](https://iterm2.com) 3.6+ after the one-time **Enable** (see [Terminal Support](#terminal-support)). Any other terminal gets half-block thumbnails (best with truecolor).
 
 The Claude Desktop app already previews pasted images, so the mod draws nothing there.
 
@@ -94,7 +117,7 @@ The Claude Desktop app already previews pasted images, so the mod draws nothing 
 
 **The tile says "no preview".** The mod couldn't find the cached file, or the paste isn't a PNG and you're not on macOS, where `sips` converts it. Claude Code may have moved where it stores pasted images. Please [open an issue](https://github.com/jarrodwatts/claude-image-view/issues) with your Claude Code version.
 
-**The tile is blocky.** Claude Code doesn't draw pictures in your terminal, so the mod draws the picture in colored half blocks. See [Terminal Support](#terminal-support).
+**The tile is blocky.** Claude Code doesn't draw pictures in your terminal, so the mod draws the picture in colored half blocks. See [Terminal Support](#terminal-support). In iTerm2 3.6+ you should see the **Enable** offer instead; if you dismissed it, add the `env` line from [iTerm2](#iterm2) to `~/.claude/settings.json` by hand.
 
 **The tile shows `[Image #1]` text instead of the picture.** The mod expected Claude Code to draw a picture, but it didn't. That happens in terminals that look like Ghostty or kitty but aren't, such as Herdr ([anthropics/claude-code#101306](https://github.com/anthropics/claude-code/issues/101306)), or in kitty older than 0.28. Set `CLAUDE_IMAGE_VIEW_RENDERER=blocks` in the environment you start Claude Code from. `CLAUDE_IMAGE_VIEW_RENDERER=image` forces real pictures the other way.
 

@@ -129,3 +129,53 @@ export function blockCells(thumb: { width: number; height: number; rgb: Uint8Arr
   }
   return (new Uint8Array(words.buffer) as Uint8Array & { toBase64(): string }).toBase64()
 }
+
+/**
+ * iTerm2's version from TERM_PROGRAM_VERSION ("3.7.6"), or null when the terminal isn't iTerm2.
+ */
+export function iterm2Version(env: Env): string | null {
+  return /^iTerm\.app$/i.test(env.TERM_PROGRAM ?? '') ? (env.TERM_PROGRAM_VERSION ?? '') : null
+}
+
+/** Whether `version` ("3.7.6", "3.6.0beta1") is at least `major.minor`. */
+export function atLeast(version: string, major: number, minor: number): boolean {
+  const match = /^(\d+)\.(\d+)/.exec(version)
+  if (!match) return false
+  const [a, b] = [Number(match[1]), Number(match[2])]
+  return a > major || (a === major && b >= minor)
+}
+
+/**
+ * Whether this is an iTerm2 that can draw real pictures but Claude Code won't, because it trusts
+ * terminals by name: iTerm2 3.6+ answers the kitty graphics protocol (file and direct PNG, Unicode
+ * placeholders) with OK, and draws Claude Code's pictures once CLAUDE_CODE_FORCE_TERMINAL_IMAGES is
+ * set (verified on iTerm2 3.7.6 with Claude Code 2.1.292). Not inside tmux or screen, where Claude
+ * Code turns images off for its own reasons, and not when the renderer is pinned by env.
+ */
+export function iterm2NeedsForce(env: Env): boolean {
+  if (env.CLAUDE_IMAGE_VIEW_RENDERER || env.CLAUDE_CODE_FORCE_TERMINAL_IMAGES) return false
+  if (env.TMUX || env.STY || env.CLAUDE_CODE_SESSION_KIND === 'bg') return false
+  const version = iterm2Version(env)
+  return version !== null && atLeast(version, 3, 6)
+}
+
+/**
+ * `settings.json` text with CLAUDE_CODE_FORCE_TERMINAL_IMAGES=1 in its `env` block, the rest kept.
+ * Empty or missing text starts a new file; text that isn't a JSON object is refused (null) so a
+ * hand-edited file is never clobbered.
+ */
+export function withForcedImages(text: string): string | null {
+  let settings: unknown = {}
+  if (text.trim() !== '') {
+    try {
+      settings = JSON.parse(text)
+    } catch {
+      return null
+    }
+  }
+  if (typeof settings !== 'object' || settings === null || Array.isArray(settings)) return null
+  const current = (settings as { env?: unknown }).env
+  const env = typeof current === 'object' && current !== null && !Array.isArray(current) ? { ...(current as Record<string, unknown>) } : {}
+  env.CLAUDE_CODE_FORCE_TERMINAL_IMAGES = '1'
+  return JSON.stringify({ ...(settings as Record<string, unknown>), env }, null, 2) + '\n'
+}

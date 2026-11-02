@@ -1,14 +1,23 @@
 {
   "name": "image-view",
-  "description": "See the images you paste into Claude Code: thumbnails above the prompt instead of bare [Image #1] tags",
-  "version": "0.2.0",
+  "description": "See the images you paste into Claude Code: thumbnails above the prompt instead of bare [Image #1] tags; real pictures in Ghostty, kitty and iTerm2 3.6+",
+  "version": "0.3.0",
   "author": {
     "name": "Jarrod Watts",
     "url": "https://github.com/jarrodwatts"
   },
-  "homepage": "https://github.com/jarrodwatts/claude-image-view",
-  "repository": "https://github.com/jarrodwatts/claude-image-view",
+  "homepage": "https://github.com/JasonWang1124/claude-image-view",
+  "repository": "https://github.com/JasonWang1124/claude-image-view",
   "license": "MIT",
-  "keywords": ["images", "paste", "preview", "thumbnails", "mod", "terminal", "claude-code"],
+  "keywords": [
+    "images",
+    "paste",
+    "preview",
+    "thumbnails",
+    "mod",
+    "terminal",
+    "claude-code",
+    "iterm2"
+  ],
   "types": "./types/index.d.ts"
 }

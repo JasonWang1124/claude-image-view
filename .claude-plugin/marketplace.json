@@ -1,14 +1,14 @@
 {
   "name": "claude-image-view",
   "owner": {
-    "name": "Jarrod Watts",
-    "url": "https://github.com/jarrodwatts"
+    "name": "JasonWang1124",
+    "url": "https://github.com/JasonWang1124"
   },
   "plugins": [
     {
       "name": "image-view",
       "source": "./",
-      "description": "See the images you paste into Claude Code: thumbnails above the prompt instead of bare [Image #1] tags",
+      "description": "See the images you paste into Claude Code: thumbnails above the prompt instead of bare [Image #1] tags; real pictures in Ghostty, kitty and iTerm2 3.6+",
       "category": "productivity",
       "tags": [
         "images",
@@ -16,7 +16,8 @@
         "preview",
         "thumbnails",
         "mod",
-        "terminal"
+        "terminal",
+        "iterm2"
       ]
     }
   ],
